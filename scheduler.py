@@ -5,43 +5,49 @@ import time
 from queue import PriorityQueue
 import threading
 from dataclasses import dataclass
+from typing import Optional, Callable
 
-# Global flag for determining if thread should stop
-STOP_THREAD = False
+@dataclass
+class Task():
+    target : Callable
+    name : str
+    stop_trigger : bool = False
+
+    def _run_thread(self):
+        while not self.stop_trigger:
+            self.target()
+
+    def start_thread(self):
+        # Reset thread trigger
+        self.stop_trigger = False
+        # Make a thread for `target`
+        self.thread = threading.Thread(target=self._run_thread, name=self.name)
+        # Start the thread
+        print(f" - Starting {self.thread.name}: [{time.time()}]")
+        self.thread.start()
+        print(f" - Started {self.thread.name}: [{time.time()}]")
+
+    def stop_thread(self):
+        # Send stop signal for _run_thread
+        self.stop_trigger = True
+        # Wait for self.thread to terminate
+        print(f" X Stopping {self.thread.name}: [{time.time()}]")
+        self.thread.join()
+        print(f" X Stopped {self.thread.name}: [{time.time()}]")
+
 
 ## Functions representing control tasks that run forever
 def task1():
-    global STOP_THREAD
-    while not STOP_THREAD:
-        print(f"task 1: {time.time()}")
-        time.sleep(1)
+    print(f"task 1: {time.time()}")
+    time.sleep(0.25)
 
 def task2():
-    global STOP_THREAD
-    while not STOP_THREAD:
-        print(f"task 2: {time.time()}")
-        time.sleep(1)
+    print(f"task 2: {time.time()}")
+    time.sleep(0.25)
 
 def task3():
-    global STOP_THREAD
-    while not STOP_THREAD:
-        print(f"task 3: {time.time()}")
-        time.sleep(1)
-
-def start_thread(thread):
-    global STOP_THREAD
-    print(f"[ ] Starting {thread.name}: [{time.time()}]")
-    STOP_THREAD = False
-    thread.start()
-    print(f"[X] {thread.name} started!: [{time.time()}]")
-
-def stop_thread(thread):
-    global STOP_THREAD
-    # Will hang until the thread finishes due to STOP_THREAD signal
-    print(f"[ ] Stopping {thread.name}: [{time.time()}]")
-    STOP_THREAD = True
-    thread.join()
-    print(f"[X] Stopped {thread.name}: [{time.time()}]")
+    print(f"task 3: {time.time()}")
+    time.sleep(0.25)
 
 ## Define initial task priorities and put them into priority queue which represents the scheduler. Lower priority number means higher priority (in accordance with python's heapq implementation)
 # Each task is represented as a thread
@@ -50,26 +56,25 @@ scheduler = PriorityQueue()
 def make_changes_to_scheduler():
     time.sleep(1)
     print(f"Adding task1 to scheduler!: [{time.time()}]")
-    scheduler.put((3, threading.Thread(target=task1, name="task1")))
+    scheduler.put((3, Task(target=task1, name="task1")))
     print(f"Added task1 to scheduler!: [{time.time()}]")
 
     time.sleep(5)
 
-    print("Adding task2 to scheduler!: [{time.time()}]")
-    scheduler.put((2, threading.Thread(target=task2, name="task2")))
-    print("Added task2 to scheduler!: [{time.time()}]")
+    print(f"Adding task2 to scheduler!: [{time.time()}]")
+    scheduler.put((2, Task(target=task2, name="task2")))
+    print(f"Added task2 to scheduler!: [{time.time()}]")
     
     time.sleep(5)
 
-    print("Adding task3 to scheduler!: [{time.time()}]")
-    scheduler.put((1, threading.Thread(target=task3, name="task3")))
-    print("Added task3 to scheduler!: [{time.time()}]")
+    print(f"Adding task3 to scheduler!: [{time.time()}]")
+    scheduler.put((1, Task(target=task3, name="task3")))
+    print(f"Added task3 to scheduler!: [{time.time()}]")
 
 
 def run_scheduler():
-    global STOP_THREAD
     # Set initial task and priority, which is nothing
-    current_priority_task = [0, None]
+    current_priority_task = [float('inf'), None]
 
     while True:
         # Naive approach:
@@ -79,27 +84,23 @@ def run_scheduler():
         # - else:
         #   - Keep running current task
 
-        if scheduler.empty():
-            # Nothing new to possibly schedule and nothing running, skip
-            continue
-
-        # Get task from scheduler
+        # Get task from scheduler, this will wait till scheduler is not empty
         new_priority_task = scheduler.get()
 
         # If no current task, set this to new current task, and start it
         if current_priority_task[1] is None:
             current_priority_task = new_priority_task
-            start_thread(current_priority_task[1])
+            current_priority_task[1].start_thread()
 
         # if new task has higher priority, then stop current task, put it back in priority queue, and start new one
         elif new_priority_task[0] < current_priority_task[0]:
             # Stop current task
-            stop_thread(current_priority_task[1])
+            current_priority_task[1].stop_thread()
             #  Re-add task to scheduler
             scheduler.put(current_priority_task)
             # Start new task
             current_priority_task = new_priority_task
-            start_thread(current_priority_task[1])
+            current_priority_task[1].start_thread()
         
         # if new task has equal or lower priority, just add back to queue
         else:
