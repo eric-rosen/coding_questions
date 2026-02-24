@@ -2,37 +2,40 @@
 "Given a real-time stream of joint torques, detect when a robot is approaching its torque limit using a rolling window. Implement with O(1) updates." — tests deque-based sliding window.
 """
 
-def calculate_rolling_window(torque_limit : float = 10, queue_size : int = 5) -> float:
-    # initialize internal queue to be empty
-    my_queue = [0.0] * queue_size 
-    # current idx for queue
-    idx = 0
-    
-    # initial current average over window
-    current_average = 0
+class RollingWindow():
+    def __init__(self, torque_limit: float = 10, window_size : int = 5):
+        self.torque_limit = torque_limit
+        self.window_size = window_size
 
-    # Get first torque
-    new_torque = yield
+        # initialize queue and average. We will implement it as a list with an index pointing to head that cycles through itself.
+        self.window = [0.0] * self.window_size
+        self.average = 0
 
-    while True:
-        # Add torque to end of queue
-        my_queue.append(new_torque)
+        # count keeps track of how many things we've added to this list. It also acts like the current idx via modulo.
+        self.count : int = 0
 
-        # check if queue is over limit. If so, remove oldeset element
-        if len(my_queue) > queue_size:
-            # get oldest torque
-            oldest_torque = my_queue[0]
-            # update queue to not have torque
-            my_queue = my_queue[1:]
-            # update current average by adding (new_torque / queue_size - oldest_torque / queue_size)
-            current_average += (new_torque / queue_size) - (oldest_torque / queue_size)
-        else: # queue too small for window, just return average, no easy way to get the average in O(1)
-            current_average = sum(my_queue) / len(my_queue)
-        # yield current_average
-        new_torque = yield current_average
+    def idx(self):
+        return self.count % self.window_size
+
+    def update(self, torque : float) -> tuple[float, bool]:
+        """
+        Given a torque, updates the rolling window and returns the average and whether average is greater than or equal to self.torque_limit.
+        """
+        # if count <= self.window_size - 1, then we are still warmstarting.
+        if self.count <= self.window_size - 1:
+            # Add incoming torque to window at idx, calculate average manually, increment count
+            self.window[self.idx()] = torque
+            self.average = sum(self.window) / (self.count + 1)
+        else:
+            # get old value, replace it with new torque, then update average
+            old_torque = self.window[self.idx()]
+            self.window[self.idx()] = torque
+            self.average += (torque / self.window_size) - (old_torque / self.window_size)
+        # increment count then return average and whether threshold is exceeded
+        self.count += 1
+        return self.average, self.average >= self.torque_limit
 
 torque_list = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0]
-gen = calculate_rolling_window()
-next(gen)
+window = RollingWindow()
 for torque in torque_list:
-    print(gen.send(torque))
+    print(window.update(torque))
